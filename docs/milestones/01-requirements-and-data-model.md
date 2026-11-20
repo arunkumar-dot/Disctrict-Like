@@ -52,40 +52,62 @@ A popular concert at a Bengaluru venue goes on sale Saturday 10:00. 5,000 seats 
 - **R5** The amount charged is the price at hold time, even if the organiser changes prices later.
 - **R6** No double charge — double clicks and duplicate gateway callbacks are safe.
 - **R7** A failed payment keeps the hold until expiry so the customer can retry.
+- **R8** A payment that succeeds after its hold expired and the seat was resold is **automatically refunded**.
 
 ### Open questions (decide and defend)
 - [ ] Per-seat holds, or one hold covering a group of seats?
-- [ ] Payment succeeds 2 seconds after the hold expired and someone else took the seat — what happens?
-- [ ] 5,000 `Seat` rows per event up front, or rows only for held/sold seats?
+- [x] Payment succeeds after the hold expired and someone else took the seat → automatic refund (R8). Mitigation still to discuss: grace window while a payment is in flight.
+- [ ] 5,000 `EventSeat` rows per event up front, or rows only for held/sold seats?
 - [ ] Can the organiser cancel an event? What happens to paid orders?
 
 ---
 
-## Milestone 1 — Design sketch (to fill in)
+## Milestone 1 — Design sketch (in progress)
 
-### Entities
-Starting suggestion: `Venue`, `Event`, `Seat` / `EventSeat`, `Hold`, `Order`, `Payment`, `User`. Add, merge, or drop with reasons.
+### Entities by bucket (agreed 2026-11-19)
 
-| Entity | Key fields & types | PK / FKs | Constraints |
-|---|---|---|---|
-| | | | |
+| Bucket | Entities | Test |
+|---|---|---|
+| **Actors** | Customer, Organiser, Payment gateway (external) | Who logs in or acts? |
+| **Catalog** | Venue, Seat (physical, e.g. G-14), Event / Show | Described once; never "runs out" |
+| **Inventory** | EventSeat (seat × show) — **availability lives here** | Can run out; has available / held / sold |
+| **Transactions** | Hold, Order, Payment, Ticket | Happened at a moment, done by someone |
 
-### Relationships
-- Cardinalities:
-- Is a seat's physical position in the venue the same thing as its availability for one event?
+Library analogy: Seat ≈ Book, EventSeat ≈ Copy, Hold / Order ≈ Loan.
 
-### State transitions
-- **Seat:**
-- **Order:**
-- **Payment:**
+### State machines (agreed 2026-11-19)
 
-### Walk-throughs
-1. Priya's happy path:
-2. Hold expires before payment:
-3. **10 people click G-14 in the same millisecond — which constraint or mechanism guarantees exactly one wins?**
+```
+EventSeat:  Available ──hold──▶ Held ──payment succeeds──▶ Sold
+                 ▲                │
+                 └──hold expires──┘
+
+Hold:       Active ──paid──▶ Converted
+                 └──timer ran out──▶ Expired
+
+Order:      Pending ──paid──▶ Confirmed
+                 ├──hold expired──▶ Cancelled
+                 └──paid too late──▶ Refunded
+
+Payment:    Initiated ──gateway OK──▶ Succeeded ──(late)──▶ Refunded
+                 └──declined / timeout──▶ Failed
+```
+
+- One event moves several machines at once ("payment succeeded" → Payment, Order, Hold, EventSeat) → must be **one DB transaction** (Milestone 4).
+- Sold → Available never happens automatically; only through an explicit refund / cancellation flow.
+
+### Core invariant
+**For one show, a seat can have at most one active hold or sale.** Enforced by the database, not by an `if` in C#.
+
+### Still to do
+- [ ] Entity table: fields, types, PK / FKs, constraints
+- [ ] Relationships with cardinalities
+- [ ] Decide: EventSeat rows created up front for every seat?
+- [ ] Walk-through: 10 people click G-14 — exact mechanism that makes 9 fail
 
 ### Review notes
-_(mentor review goes here)_
+- **2026-11-19:** First bucketing put Venue and Seat in Inventory and EventSeat in Transactions. Fixed with the three-question test (happens? runs out? described once?). Ticket correctly moved from Inventory to Transactions.
+- **2026-11-19:** State-machine check: correct on expiry → re-hold and on Sold being final. Late-payment case: the contradiction is Payment = Succeeded while the seat belongs to someone else — resolved by refund (R8). Invariant sharpened from "one person" to "one active hold or sale per EventSeat".
 
 ---
 
