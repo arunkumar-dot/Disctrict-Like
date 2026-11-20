@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DistrictLike.Api/DistrictLike.Api.csproj" />
+    <Project Path="src/DistrictLike.Application/DistrictLike.Application.csproj" />
+    <Project Path="src/DistrictLike.Domain/DistrictLike.Domain.csproj" />
+    <Project Path="src/DistrictLike.Infrastructure/DistrictLike.Infrastructure.csproj" />
+  </Folder>
+</Solution>
